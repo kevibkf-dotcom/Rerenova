@@ -1,0 +1,176 @@
+```yaml
+name: Compilar APK Renova tu mente sin conexión
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar proyecto
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Instalar componentes Android
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar Android SDK 35
+        run: |
+          yes | sdkmanager --licenses || true
+
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Verificar ZIP
+        run: |
+          if [ ! -f "Renova-tu-mente-COMPLETO-GitHub-APK.zip" ]; then
+            echo "ERROR: No se encontró el ZIP."
+            echo ""
+            echo "Archivos disponibles:"
+            find . -maxdepth 2 -type f -print
+            exit 1
+          fi
+
+          echo "✓ ZIP encontrado."
+
+      - name: Extraer proyecto
+        run: |
+          rm -rf renova
+          mkdir -p renova
+
+          unzip -q \
+            "Renova-tu-mente-COMPLETO-GitHub-APK.zip" \
+            -d renova
+
+          echo "Contenido extraído:"
+          find renova -maxdepth 3 -type f -print
+
+      - name: Detectar carpeta real del proyecto
+        run: |
+          echo "Buscando settings.gradle..."
+
+          SETTINGS=$(find renova -name "settings.gradle" -type f | head -n 1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERROR: No se encontró settings.gradle dentro del ZIP."
+            echo ""
+            echo "Contenido del ZIP:"
+            unzip -l "Renova-tu-mente-COMPLETO-GitHub-APK.zip"
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "Proyecto encontrado en:"
+          echo "$PROJECT_DIR"
+
+          echo "$PROJECT_DIR" > project_dir.txt
+
+      - name: Verificar estructura del proyecto
+        run: |
+          PROJECT_DIR=$(cat project_dir.txt)
+
+          echo "======================================"
+          echo "PROYECTO"
+          echo "======================================"
+
+          test -f "$PROJECT_DIR/settings.gradle" || {
+            echo "ERROR: falta settings.gradle"
+            exit 1
+          }
+
+          test -f "$PROJECT_DIR/build.gradle" || {
+            echo "ERROR: falta build.gradle"
+            exit 1
+          }
+
+          test -d "$PROJECT_DIR/app" || {
+            echo "ERROR: falta app/"
+            exit 1
+          }
+
+          test -f "$PROJECT_DIR/app/build.gradle" || {
+            echo "ERROR: falta app/build.gradle"
+            exit 1
+          }
+
+          test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml" || {
+            echo "ERROR: falta AndroidManifest.xml"
+            exit 1
+          }
+
+          test -f "$PROJECT_DIR/app/src/main/assets/content.json" || {
+            echo "ERROR: falta content.json"
+            exit 1
+          }
+
+          echo "✓ Estructura correcta."
+
+      - name: Verificar contenido offline
+        run: |
+          PROJECT_DIR=$(cat project_dir.txt)
+
+          echo "Contenido bíblico:"
+          du -h "$PROJECT_DIR/app/src/main/assets/content.json"
+
+          test -s "$PROJECT_DIR/app/src/main/assets/content.json" || {
+            echo "ERROR: content.json está vacío."
+            exit 1
+          }
+
+          echo "✓ Contenido offline encontrado."
+
+      - name: Compilar APK
+        run: |
+          PROJECT_DIR=$(cat project_dir.txt)
+
+          cd "$PROJECT_DIR"
+
+          gradle assembleDebug --stacktrace
+
+      - name: Verificar APK generada
+        run: |
+          PROJECT_DIR=$(cat project_dir.txt)
+
+          echo "======================================"
+          echo "APK GENERADA"
+          echo "======================================"
+
+          find "$PROJECT_DIR/app/build/outputs/apk/debug" \
+            -name "*.apk" \
+            -type f \
+            -print
+
+          APK_COUNT=$(find "$PROJECT_DIR/app/build/outputs/apk/debug" \
+            -name "*.apk" \
+            -type f | wc -l)
+
+          if [ "$APK_COUNT" -eq 0 ]; then
+            echo "ERROR: no se generó ninguna APK."
+            exit 1
+          fi
+
+          echo "✓ APK generada correctamente."
+
+      - name: Publicar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Renova-tu-mente-APK-sin-conexion
+          path: renova/**/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+```
